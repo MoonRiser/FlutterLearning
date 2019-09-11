@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../styles.dart';
 import 'ball.dart';
+import 'float_ball.dart';
 
 class RunBall extends StatefulWidget {
   @override
@@ -11,11 +12,15 @@ class RunBall extends StatefulWidget {
 
 class _RunBallState extends State<RunBall> with TickerProviderStateMixin {
   AnimationController controller;
+  AnimationController controllerG; //控制粒子贝塞尔轨迹
+  Animation animation;
 
   // var _oldTime = DateTime.now().millisecondsSinceEpoch;
-  var _area = Rect.fromLTRB(0 + 40.0, 0 + 200.0, 320 + 40.0, 200 + 200.0);
+  var _area = Rect.fromLTRB(0 + 20.0, 0, 370 + 20.0, 0 + 200.0);
+  var _areaF = Rect.fromLTRB(0 + 20.0, 0, 370 + 20.0, 0 + 200.0);
 
   var _balls = <Ball>[];
+  var _ballsF = <Ball>[];
 
   @override
   Widget build(BuildContext context) {
@@ -42,25 +47,74 @@ class _RunBallState extends State<RunBall> with TickerProviderStateMixin {
             controller.stop();
           },
         ),
+        Container(
+          child: Text("粒子碰撞"),
+          height: 20,
+        ),
         GestureDetector(
-          child: Text('hello,world'),
+          child: Container(
+            width: double.infinity,
+            height: 200,
+            child: CustomPaint(
+              painter: FloatBallView(_ballsF, _areaF),
+            ),
+          ),
+          onTap: () {
+            controllerG.forward();
+          },
+          onDoubleTap: () {
+            controllerG.stop();
+          },
+        ),
+        Container(
+          child: Text("粒子漂浮"),
+          height: 20,
         ),
       ],
     );
 
     return Scaffold(
-      body: testFields,
+      body: SafeArea(
+        child: testFields,
+      ),
     );
   }
 
   @override
   void initState() {
+    super.initState();
     controller = AnimationController(
       vsync: this,
       duration: Duration(days: 365 * 999),
     )..addListener(() {
         _render();
       });
+
+    controllerG = AnimationController(
+      vsync: this,
+      duration: Duration(seconds: 10),
+    )..addListener(() {
+        _renderBezier();
+      });
+    animation = CurvedAnimation(parent: controllerG, curve: Curves.linear);
+    animation.addStatusListener((status) {
+      switch(status){
+        case AnimationStatus.dismissed:
+          controllerG.forward();
+          // TODO: Handle this case.
+          break;
+        case AnimationStatus.forward:
+          // TODO: Handle this case.
+          break;
+        case AnimationStatus.reverse:
+          // TODO: Handle this case.
+          break;
+        case AnimationStatus.completed:
+          // TODO: Handle this case.
+        controllerG.reverse();
+          break;
+      }
+    });
 
     for (var i = 0; i < 100; i++) {
       var random = new Random();
@@ -70,14 +124,28 @@ class _RunBallState extends State<RunBall> with TickerProviderStateMixin {
           aY: 0.05,
           vX: random.nextInt(4).toDouble(),
           vY: -random.nextInt(4).toDouble(),
-          x: 80.0 + random.nextInt(6) * 20,
-          y: 250.0 + random.nextInt(6) * 20));
+          x: _randPosition().dx,
+          y: _randPosition().dy));
+    }
+
+    for (var i = 0; i < 10; i++) {
+      var random = new Random();
+      _ballsF.add(new Ball(
+          color: Colors.blue,
+          r: 8,
+          aY: 0.05,
+          vX: random.nextInt(4).toDouble(),
+          vY: -random.nextInt(4).toDouble(),
+          x: _randPosition().dx,
+          y: _randPosition().dy));
     }
   }
 
   @override
   void dispose() {
+    super.dispose();
     controller.dispose();
+    controllerG.dispose();
   }
 
   _render() {
@@ -88,6 +156,14 @@ class _RunBallState extends State<RunBall> with TickerProviderStateMixin {
 
       // var now = DateTime.now().millisecondsSinceEpoch;
       //  print("时间差/刷新周期：${now - _oldTime}ms");
+    });
+  }
+
+  _renderBezier() {
+    setState(() {
+      _ballsF.forEach((ball) {
+        bezierPath(ball, animation.value);
+      });
     });
   }
 
@@ -134,12 +210,13 @@ class _RunBallState extends State<RunBall> with TickerProviderStateMixin {
   //碰撞后小球半径减半
   void _halfRadius(Ball ball) {
     // print("小球半径为：${ball.r}");
-    var random = new Random();
+
     var temp = ball.r / 2;
     if (temp < 1) {
       ball.r = 16;
-      ball.x = 80.0 + random.nextInt(6) * 20;
-      ball.y = 250.0 + random.nextInt(6) * 20;
+      var offset = _randPosition();
+      ball.x = offset.dx;
+      ball.y = offset.dy;
     } else {
       ball.r = temp;
     }
@@ -148,5 +225,35 @@ class _RunBallState extends State<RunBall> with TickerProviderStateMixin {
 //碰撞后随机色
   void _randColor(Ball ball) {
     ball.color = Styles.randomColor(); //碰撞后随机色
+  }
+
+  //随机生成圆心坐标
+  Offset _randPosition([int seed]) {
+    var random;
+    if (seed != null) {
+      random = new Random(seed);
+    } else {
+      random = new Random();
+    }
+
+    var x = 36 + random.nextInt(339);
+    var y = 16 + random.nextInt(169);
+    return Offset(x.toDouble(), y.toDouble());
+  }
+
+  //贝塞尔曲线路径
+  void bezierPath(Ball ball, double t) {
+    //(1-t)*(1-t)*p0 +2*t*(1-t)*p1+t*t*p2
+
+    Offset p0 = Offset(ball.x, ball.y);
+    Offset p1 = _randPosition(ball.id);
+
+    Offset p2 = _randPosition(ball.id + 1);
+    var bx =
+        (1 - t) * (1 - t) * p0.dx + 2 * t * (1 - t) * p1.dx + t * t * p2.dx;
+    var by =
+        (1 - t) * (1 - t) * p0.dy + 2 * t * (1 - t) * p1.dy + t * t * p2.dy;
+    ball.x = bx;
+    ball.y = by;
   }
 }
